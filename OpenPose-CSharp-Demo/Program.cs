@@ -18,10 +18,6 @@ namespace OpenPose_CSharp_Demo
 {
 	public class Program
 	{
-		// Haptic pulse info
-		private DateTime? lastHapticPulseTime = null;
-		private uint lastHapticPulseLengthUs = 0;
-
 		// API client         
 		private readonly APIClient apiClient = new APIClient("OpenPose CSharp Demo");
 
@@ -49,9 +45,15 @@ namespace OpenPose_CSharp_Demo
 			KeyPoint2D.X_Scale_PPM = 426.6f;
 			KeyPoint2D.Y_Scale_PPM = 447.2f;
 
-			OpenPose_Reader reader = new OpenPose_Reader2D("C:\\Users\\Dankrushen\\openpose-1.3.0-win64-gpu-binaries\\JSON_Output\\", listener);
+			OpenPose_Reader.Model = Model.MPI;
+			OpenPose_Reader2D.Simulate3D = true;
 
-			reader.AsynchronousQueueReader().Join();
+			OpenPose_Reader2D reader = new OpenPose_Reader2D("C:\\Users\\Dankrushen\\openpose-1.3.0-win64-gpu-binaries\\JSON_Output\\", listener)
+			{
+				QueueCheckDelay = 3
+			};
+
+			reader.QueueReader();
 		}
 
 		private void ConnectOrReconnect()
@@ -64,7 +66,6 @@ namespace OpenPose_CSharp_Demo
 				controllerService2 = new ControllerService(apiClient.CreateProxy<ControllerProxy>());
 
 				broadcastProxy = apiClient.CreateProxy<BroadcastProxy>();
-				broadcastProxy.HapticPulseReceived += OnHapticFeedbackReceived;
 
 				headTrackingService.ChangeStatus(true);
 			}
@@ -96,17 +97,12 @@ namespace OpenPose_CSharp_Demo
 		{
 			headTrackingService.RecenterView();
 		}
-
-		private void OnHapticFeedbackReceived(object sender, HapticPulse hapticPulse)
-		{
-			lastHapticPulseLengthUs = hapticPulse.LengthUs;
-			lastHapticPulseTime = DateTime.Now;
-		}
 	}
 
 	public class PoseEventListener : IPoseEvent
 	{
 		private Program program;
+		//private static bool HeadsetStatus = false;
 
 		public PoseEventListener(Program program)
 		{
@@ -117,43 +113,77 @@ namespace OpenPose_CSharp_Demo
 		{
 			//Console.WriteLine("Test");
 
+			foreach (KeyPoint point in pose.KeyPoints)
+			{
+				Console.WriteLine(point.ToString());
+			}
+
 			if (pose != null && typeof(Pose2D) == pose.GetType())
 			{
 				Pose2D pose2D = (Pose2D)pose;
 
-				KeyPoint2D nose = pose2D.GetKeyPoint2D(BodyPoint.Nose);
+				KeyPoint2D nose = pose2D.GetKeyPoint2D(BodyPoint.Nose_or_Top_Head);
 				//KeyPoint2D leftEye = pose2D.GetKeyPoint2D(BodyPoint.Left_Eye);
 				//KeyPoint2D rightEye = pose2D.GetKeyPoint2D(BodyPoint.Right_Eye);
 
 				if (nose != null && nose.IsValid)//&& leftEye != null && rightEye != null && nose.IsValid && leftEye.IsValid && rightEye.IsValid)
 				{
-					program.headTrackingService.ChangeStatus(true);
+					//if (!HeadsetStatus)
+					//{
+					//	program.headTrackingService.ChangeStatus(true);
+					//	HeadsetStatus = true;
+					//}
 
 					//float height = (leftEye.Y + rightEye.Y) / 2;
 					program.headTrackingService.SendPositionOnly(nose.X, nose.Y, 0);
 				}
-				else
-				{
-					program.headTrackingService.ChangeStatus(false);
-				}
+				//else
+				//{
+				//	if (HeadsetStatus)
+				//	{
+				//		program.headTrackingService.ChangeStatus(false);
+				//		HeadsetStatus = false;
+				//	}
+				//}
 
 				KeyPoint2D rightHand = pose2D.GetKeyPoint2D(BodyPoint.Right_Wrist);
 
 				if (rightHand != null && rightHand.IsValid)
 				{
-					program.controllerService.SetControllerState(0, rightHand.X, rightHand.Y, -0.5, 0, 0, 0, 0, 0, 0, false, false, false);
+					program.controllerService.SetControllerState(0, rightHand.X, rightHand.Y, -0.6, 0, 0, 0, 0, 0, 0, false, false, false);
 				}
 
 				KeyPoint2D leftHand = pose2D.GetKeyPoint2D(BodyPoint.Left_Wrist);
 
 				if (leftHand != null && leftHand.IsValid)
 				{
-					program.controllerService2.SetControllerState(1, leftHand.X, leftHand.Y, -0.5, 0, 0, 0, 0, 0, 0, false, false, false);
+					program.controllerService2.SetControllerState(1, leftHand.X, leftHand.Y, -0.6, 0, 0, 0, 0, 0, 0, false, false, false);
 				}
 			}
-			else
+			else if (pose != null && typeof(Pose3D) == pose.GetType())
 			{
-				throw (new Exception("Not Pose2D."));
+				Pose3D pose3D = (Pose3D)pose;
+
+				KeyPoint3D nose = pose3D.GetKeyPoint3D(BodyPoint.Nose_or_Top_Head);
+
+				if (nose != null && nose.IsValid)
+				{
+					program.headTrackingService.SendRotationAndPosition(0, 0, 0, nose.X, nose.Y, 0);
+				}
+
+				KeyPoint3D rightHand = pose3D.GetKeyPoint3D(BodyPoint.Right_Wrist);
+
+				if (rightHand != null && rightHand.IsValid)
+				{
+					program.controllerService.SetControllerState(0, rightHand.X, rightHand.Y, -0.6, 0, 0, 0, 0, 0, 0, false, false, false);
+				}
+
+				KeyPoint3D leftHand = pose3D.GetKeyPoint3D(BodyPoint.Left_Wrist);
+
+				if (leftHand != null && leftHand.IsValid)
+				{
+					program.controllerService2.SetControllerState(1, leftHand.X, leftHand.Y, leftHand.Z, 0, 0, 0, 0, 0, 0, false, false, false);
+				}
 			}
 		}
 	}
