@@ -25,11 +25,14 @@ namespace OpenPose_CSharp_Demo
 		public TrackingService headTrackingService;
 		public ControllerService controllerService;
 		public ControllerService controllerService2;
+		//public ControllerService controllerService3;
+		//public ControllerService controllerService4;
 
 		// Broadcast listener
 		private BroadcastProxy broadcastProxy;
 
-		public static PoseEventListener listener;
+		public PoseEventListener listener;
+		public TrackingInterpolation tracking;
 
 		static void Main(string[] args)
 		{
@@ -42,16 +45,24 @@ namespace OpenPose_CSharp_Demo
 			ConnectOrReconnect();
 
 			listener = new PoseEventListener(this);
-			KeyPoint2D.X_Scale_PPM = 426.6f;
-			KeyPoint2D.Y_Scale_PPM = 447.2f;
 
-			OpenPose_Reader.Model = Model.MPI;
+			tracking = new TrackingInterpolation(this, listener);
+
+			KeyPoint2D.X_Scale_PPM = 426.6;
+			KeyPoint2D.Y_Scale_PPM = 447.2;
+
+			KeyPoint3D.X_Scale_PPM = 426.6;
+			KeyPoint3D.Y_Scale_PPM = 447.2;
+
+			OpenPose_Reader.Model = Model.COCO;
 			OpenPose_Reader2D.Simulate3D = true;
 
 			OpenPose_Reader2D reader = new OpenPose_Reader2D("C:\\Users\\Dankrushen\\openpose-1.3.0-win64-gpu-binaries\\JSON_Output\\", listener)
 			{
-				QueueCheckDelay = 3
+				QueueCheckDelay = 5
 			};
+
+			tracking.RunAsyncInterpolator();
 
 			reader.QueueReader();
 		}
@@ -62,8 +73,11 @@ namespace OpenPose_CSharp_Demo
 			{
 				// Connect to the services
 				headTrackingService = new TrackingService(apiClient.CreateProxy<HeadTrackingProxy>());
+
 				controllerService = new ControllerService(apiClient.CreateProxy<ControllerProxy>());
 				controllerService2 = new ControllerService(apiClient.CreateProxy<ControllerProxy>());
+				//controllerService3 = new ControllerService(apiClient.CreateProxy<ControllerProxy>());
+				//controllerService4 = new ControllerService(apiClient.CreateProxy<ControllerProxy>());
 
 				broadcastProxy = apiClient.CreateProxy<BroadcastProxy>();
 
@@ -104,6 +118,13 @@ namespace OpenPose_CSharp_Demo
 		private Program program;
 		//private static bool HeadsetStatus = false;
 
+		private double LastTime = ConvertToUnixTimestampMs(DateTime.UtcNow);
+		public double TimeBetweenPoses = 0;
+
+		public Pose lastPose;
+		public Pose curPose;
+		public Pose newPose;
+
 		public PoseEventListener(Program program)
 		{
 			this.program = program;
@@ -111,80 +132,25 @@ namespace OpenPose_CSharp_Demo
 
 		public void OnPoseGenerated(Pose pose)
 		{
-			//Console.WriteLine("Test");
+			lastPose = curPose;
+			newPose = pose;
 
-			foreach (KeyPoint point in pose.KeyPoints)
-			{
-				Console.WriteLine(point.ToString());
-			}
+			double curTime = ConvertToUnixTimestampMs(DateTime.UtcNow);
+			TimeBetweenPoses = curTime - LastTime;
+			LastTime = curTime;
+		}
 
-			if (pose != null && typeof(Pose2D) == pose.GetType())
-			{
-				Pose2D pose2D = (Pose2D)pose;
+		public static DateTime ConvertFromUnixTimestampMs(double timestamp)
+		{
+			DateTime origin = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+			return origin.AddMilliseconds(timestamp);
+		}
 
-				KeyPoint2D nose = pose2D.GetKeyPoint2D(BodyPoint.Nose_or_Top_Head);
-				//KeyPoint2D leftEye = pose2D.GetKeyPoint2D(BodyPoint.Left_Eye);
-				//KeyPoint2D rightEye = pose2D.GetKeyPoint2D(BodyPoint.Right_Eye);
-
-				if (nose != null && nose.IsValid)//&& leftEye != null && rightEye != null && nose.IsValid && leftEye.IsValid && rightEye.IsValid)
-				{
-					//if (!HeadsetStatus)
-					//{
-					//	program.headTrackingService.ChangeStatus(true);
-					//	HeadsetStatus = true;
-					//}
-
-					//float height = (leftEye.Y + rightEye.Y) / 2;
-					program.headTrackingService.SendPositionOnly(nose.X, nose.Y, 0);
-				}
-				//else
-				//{
-				//	if (HeadsetStatus)
-				//	{
-				//		program.headTrackingService.ChangeStatus(false);
-				//		HeadsetStatus = false;
-				//	}
-				//}
-
-				KeyPoint2D rightHand = pose2D.GetKeyPoint2D(BodyPoint.Right_Wrist);
-
-				if (rightHand != null && rightHand.IsValid)
-				{
-					program.controllerService.SetControllerState(0, rightHand.X, rightHand.Y, -0.6, 0, 0, 0, 0, 0, 0, false, false, false);
-				}
-
-				KeyPoint2D leftHand = pose2D.GetKeyPoint2D(BodyPoint.Left_Wrist);
-
-				if (leftHand != null && leftHand.IsValid)
-				{
-					program.controllerService2.SetControllerState(1, leftHand.X, leftHand.Y, -0.6, 0, 0, 0, 0, 0, 0, false, false, false);
-				}
-			}
-			else if (pose != null && typeof(Pose3D) == pose.GetType())
-			{
-				Pose3D pose3D = (Pose3D)pose;
-
-				KeyPoint3D nose = pose3D.GetKeyPoint3D(BodyPoint.Nose_or_Top_Head);
-
-				if (nose != null && nose.IsValid)
-				{
-					program.headTrackingService.SendRotationAndPosition(0, 0, 0, nose.X, nose.Y, 0);
-				}
-
-				KeyPoint3D rightHand = pose3D.GetKeyPoint3D(BodyPoint.Right_Wrist);
-
-				if (rightHand != null && rightHand.IsValid)
-				{
-					program.controllerService.SetControllerState(0, rightHand.X, rightHand.Y, -0.6, 0, 0, 0, 0, 0, 0, false, false, false);
-				}
-
-				KeyPoint3D leftHand = pose3D.GetKeyPoint3D(BodyPoint.Left_Wrist);
-
-				if (leftHand != null && leftHand.IsValid)
-				{
-					program.controllerService2.SetControllerState(1, leftHand.X, leftHand.Y, leftHand.Z, 0, 0, 0, 0, 0, 0, false, false, false);
-				}
-			}
+		public static double ConvertToUnixTimestampMs(DateTime date)
+		{
+			DateTime origin = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+			TimeSpan diff = date.ToUniversalTime() - origin;
+			return diff.TotalMilliseconds;
 		}
 	}
 }
