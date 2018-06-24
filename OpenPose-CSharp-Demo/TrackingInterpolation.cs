@@ -21,6 +21,12 @@ namespace OpenPose_CSharp_Demo
 		private Pose lastPose;
 		private int curPoseTimePassed = 0;
 
+		public static int RotationAveragingAmount = 10;
+
+		private Dictionary<BodyPoint, List<double>> yawAverage = new Dictionary<BodyPoint, List<double>>();
+		private Dictionary<BodyPoint, List<double>> pitchAverage = new Dictionary<BodyPoint, List<double>>();
+		private Dictionary<BodyPoint, List<double>> rollAverage = new Dictionary<BodyPoint, List<double>>();
+
 		public List<Thread> interpolators = new List<Thread>();
 
 		public TrackingInterpolation(Program program, PoseEventListener eventListener)
@@ -75,9 +81,9 @@ namespace OpenPose_CSharp_Demo
 				InterpolatorDelay = (int)Math.Floor(eventListener.TimeBetweenPoses / InterpolatorMultiplier);
 
 				double interpolateDivider = (InterpolatorDelay > 0 ? ((eventListener.TimeBetweenPoses - curPoseTimePassed) / InterpolatorDelay) : 0);
-				interpolateDivider = (interpolateDivider < 1 && InterpolatorDelay > 0 ? 1 : interpolateDivider);
+				interpolateDivider = (interpolateDivider < 1 ? 1 : interpolateDivider);
 
-				if (interpolateDivider >= 1)
+				if (interpolateDivider >= 1 && InterpolatorDelay > 0)
 				{
 					//Console.WriteLine("Interpolate Divider: " + interpolateDivider);
 
@@ -162,7 +168,7 @@ namespace OpenPose_CSharp_Demo
 				// Differences
 				double x_diff = (newKeyPoint.Raw_X - keyPoint.Raw_X) / interpolateAmount;
 				double y_diff = (newKeyPoint.Raw_Y - keyPoint.Raw_Y) / interpolateAmount;
-				//double z_diff = (newKeyPoint.Raw_Z - keyPoint.Raw_Z) / interpolateAmount;
+				double z_diff = (newKeyPoint.Raw_Z - keyPoint.Raw_Z) / interpolateAmount;
 
 				double yaw_diff = (newKeyPoint.Yaw - keyPoint.Yaw) / interpolateAmount;
 				double pitch_diff = (newKeyPoint.Pitch - keyPoint.Pitch) / interpolateAmount;
@@ -171,13 +177,19 @@ namespace OpenPose_CSharp_Demo
 				// New values
 				double new_x = keyPoint.Raw_X + x_diff;
 				double new_y = keyPoint.Raw_Y + y_diff;
-				//double new_z = keyPoint.Raw_Z + z_diff;
+				double new_z = keyPoint.Raw_Z + z_diff;
 
 				double new_yaw = keyPoint.Yaw + yaw_diff;
 				double new_pitch = keyPoint.Pitch + pitch_diff;
 				double new_roll = keyPoint.Roll + roll_diff;
 
-				return new KeyPoint3D(newKeyPoint.BodyPoint, new_x, new_y, newKeyPoint.Raw_Z, newKeyPoint.Score, new_yaw, new_pitch, new_roll);
+				//Console.WriteLine("Yaw: " + new_yaw);
+
+				new_yaw = AverageYaw(newKeyPoint.BodyPoint, new_yaw);
+				new_pitch = AveragePitch(newKeyPoint.BodyPoint, new_pitch);
+				new_roll = AverageRoll(newKeyPoint.BodyPoint, new_roll);
+
+				return new KeyPoint3D(newKeyPoint.BodyPoint, new_x, new_y, new_z, newKeyPoint.Score, new_yaw, new_pitch, new_roll);
 			}
 
 			return newKeyPoint;
@@ -203,10 +215,119 @@ namespace OpenPose_CSharp_Demo
 				double new_pitch = keyPoint.Pitch + pitch_diff;
 				double new_roll = keyPoint.Roll + roll_diff;
 
+				new_yaw = AverageYaw(newKeyPoint.BodyPoint, new_yaw);
+				new_pitch = AveragePitch(newKeyPoint.BodyPoint, new_pitch);
+				new_roll = AverageRoll(newKeyPoint.BodyPoint, new_roll);
+
 				return new KeyPoint2D(newKeyPoint.BodyPoint, new_x, new_y, newKeyPoint.Score, new_yaw, new_pitch, new_roll);
 			}
 
 			return newKeyPoint;
+		}
+
+		public double AverageYaw(BodyPoint bodyPoint, double new_yaw)
+		{
+			if (yawAverage.ContainsKey(bodyPoint) && yawAverage.TryGetValue(bodyPoint, out List<double> yawValues))
+			{
+				yawValues.Add(new_yaw);
+
+				if (yawValues.Count > RotationAveragingAmount)
+				{
+					for (int i = 0; i < yawValues.Count - RotationAveragingAmount; i++)
+					{
+						yawValues.RemoveAt(0);
+					}
+				}
+
+				double averaged_yaw = 0;
+				foreach (double yaw in yawValues)
+				{
+					averaged_yaw += yaw;
+				}
+
+				new_yaw = averaged_yaw / yawValues.Count;
+			}
+			else
+			{
+				yawValues = new List<double>
+					{
+						new_yaw
+					};
+
+				yawAverage.Add(bodyPoint, yawValues);
+			}
+
+			return new_yaw;
+		}
+
+		public double AveragePitch(BodyPoint bodyPoint, double new_pitch)
+		{
+			if (pitchAverage.ContainsKey(bodyPoint) && pitchAverage.TryGetValue(bodyPoint, out List<double> pitchValues))
+			{
+				pitchValues.Add(new_pitch);
+
+				if (pitchValues.Count > RotationAveragingAmount)
+				{
+					for (int i = 0; i < pitchValues.Count - RotationAveragingAmount; i++)
+					{
+						pitchValues.RemoveAt(0);
+					}
+				}
+
+				double averaged_pitch = 0;
+				foreach (double pitch in pitchValues)
+				{
+					averaged_pitch += pitch;
+				}
+
+				new_pitch = averaged_pitch / pitchValues.Count;
+			}
+			else
+			{
+				pitchValues = new List<double>
+					{
+						new_pitch
+					};
+
+				pitchAverage.Add(bodyPoint, pitchValues);
+			}
+
+			return new_pitch;
+		}
+
+		public double AverageRoll(BodyPoint bodyPoint, double new_roll)
+		{
+			if (rollAverage.ContainsKey(bodyPoint) && rollAverage.TryGetValue(bodyPoint, out List<double> rollValues))
+			{
+				rollValues.Add(new_roll);
+
+				if (rollValues.Count > RotationAveragingAmount)
+				{
+					for (int i = 0; i < rollValues.Count - RotationAveragingAmount; i++)
+					{
+						rollValues.RemoveAt(0);
+					}
+				}
+
+				double averaged_roll = 0;
+				foreach (double roll in rollValues)
+				{
+					averaged_roll += roll;
+				}
+
+				new_roll = averaged_roll / rollValues.Count;
+			}
+			else
+			{
+				rollValues = new List<double>
+					{
+						new_roll
+					};
+
+				rollAverage.Add(bodyPoint, rollValues);
+			}
+
+			return new_roll;
 		}
 
 		public void SendPose(Pose pose)
@@ -266,8 +387,8 @@ namespace OpenPose_CSharp_Demo
 
 				if (nose != null && nose.IsValid)
 				{
-					program.headTrackingService.SendPositionOnly(nose.X, nose.Y, 0);
-					//program.headTrackingService.SendRotationAndPosition(0, 0, 0, nose.X, nose.Y, 0);
+					//program.headTrackingService.SendPositionOnly(nose.X, nose.Y, 0);
+					program.headTrackingService.SendRotationAndPosition(nose.Yaw, nose.Pitch, nose.Roll, nose.X, nose.Y, nose.Z);
 					//program.headTrackingService.SendAsyncOffset(0, 0, 0);
 				}
 
@@ -275,14 +396,14 @@ namespace OpenPose_CSharp_Demo
 
 				if (rightHand != null && rightHand.IsValid)
 				{
-					program.controllerService2.SetControllerState(0, rightHand.X, rightHand.Y, rightHand.Z, 0, 0, 0, 0, 0, 0, false, false, false);
+					program.controllerService2.SetControllerState(0, rightHand.X, rightHand.Y, rightHand.Z, rightHand.Yaw, rightHand.Pitch, rightHand.Roll, 0, 0, 0, false, false, false);
 				}
 
 				KeyPoint3D leftHand = pose3D.GetKeyPoint3D(BodyPoint.Left_Wrist);
 
 				if (leftHand != null && leftHand.IsValid)
 				{
-					program.controllerService.SetControllerState(1, leftHand.X, leftHand.Y, leftHand.Z, 0, 0, 0, 0, 0, 0, false, false, false);
+					program.controllerService.SetControllerState(1, leftHand.X, leftHand.Y, leftHand.Z, leftHand.Yaw, leftHand.Pitch, leftHand.Roll, 0, 0, 0, false, false, false);
 				}
 
 				KeyPoint3D rightFoot = pose3D.GetKeyPoint3D(BodyPoint.Right_Heel);
