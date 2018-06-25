@@ -67,7 +67,7 @@ namespace OpenPose_CSharp_Demo
 			reader.QueueReader();
 		}
 
-		private void ConnectOrReconnect()
+		public void ConnectOrReconnect()
 		{
 			try
 			{
@@ -104,12 +104,26 @@ namespace OpenPose_CSharp_Demo
 
 		private void ResetAsyncRotation()
 		{
-			headTrackingService.ResetAsyncOffset();
+			try
+			{
+				headTrackingService.ResetAsyncOffset();
+			}
+			catch (Exception)
+			{
+				ConnectOrReconnect();
+			}
 		}
 
 		private void RecenterView()
 		{
-			headTrackingService.RecenterView();
+			try
+			{
+				headTrackingService.RecenterView();
+			}
+			catch (Exception)
+			{
+				ConnectOrReconnect();
+			}
 		}
 	}
 
